@@ -1,0 +1,12 @@
+[package]
+name = "keyde"
+version = "0.1.0"
+edition = "2021"
+authors = [ "Erik W. Gren <ErikWDev@gmail.com>" ]
+
+[dependencies]
+glam = { version = "0.22", optional = true }
+
+[features]
+default = []
+glam = ["dep:glam"]
