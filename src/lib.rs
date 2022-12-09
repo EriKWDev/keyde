@@ -30,28 +30,30 @@ impl<'a, const D: usize, P: Point<D>> KdTree<'a, D, P> {
     pub fn from_items(points: &'a [P]) -> Self {
         let mut tree = Vec::with_capacity(points.len());
 
-        let mut heap_array = if D > 5 { vec![vec![]; D] } else { vec![] };
-        let mut stack_array = [vec![], vec![], vec![], vec![], vec![]];
+        let mut axis_sorted_point_ids = vec![vec![]; D];
+        let mut axis_point_id_to_sorted_id = vec![vec![0; points.len()]; D];
 
-        let sorted_axis_ids = if D <= 5 {
-            &mut stack_array as &mut [_]
-        } else {
-            &mut heap_array as &mut [_]
-        };
+        axis_sorted_point_ids[D - 1] = (0..points.len()).into_iter().collect::<Vec<_>>();
 
-        sorted_axis_ids[D - 1] = (0..points.len()).into_iter().collect::<Vec<_>>();
-        for axis in 0..D - 1 {
+        (0..D - 1).into_iter().for_each(|axis| {
             if axis < D - 1 {
-                sorted_axis_ids[axis] = sorted_axis_ids[D - 1].clone();
+                axis_sorted_point_ids[axis] = axis_sorted_point_ids[D - 1].clone();
             }
 
-            sorted_axis_ids[axis].sort_by(|a, b| {
+            axis_sorted_point_ids[axis].sort_by(|a, b| {
                 points[*a]
                     .get_axis(axis)
                     .partial_cmp(&points[*b].get_axis(axis))
                     .unwrap_or_else(|| std::cmp::Ordering::Equal)
             });
-        }
+
+            axis_sorted_point_ids[axis]
+                .iter()
+                .enumerate()
+                .for_each(|(i, pi)| {
+                    axis_point_id_to_sorted_id[axis][*pi] = i;
+                });
+        });
 
         let mut is_root = true;
         let mut ranges_to_do = vec![(0..points.len(), 0, 0, 0)];
@@ -61,7 +63,7 @@ impl<'a, const D: usize, P: Point<D>> KdTree<'a, D, P> {
             let end = range.end;
 
             let axis = depth % D;
-            let sorted_ids = &sorted_axis_ids[axis];
+            let sorted_ids = &axis_sorted_point_ids[axis];
             let median = (end + start) / 2;
 
             let index = tree.len();
@@ -94,8 +96,6 @@ impl<'a, const D: usize, P: Point<D>> KdTree<'a, D, P> {
     pub fn nearest_within(&self, query_point: P, radius: f32) -> Vec<usize> {
         let radius_squared = radius * radius;
 
-        // dbg!(&self);
-
         let mut querty_point_axis_values = [0.0; D];
         for i in 0..D {
             querty_point_axis_values[i] = query_point.get_axis(i);
@@ -125,7 +125,6 @@ impl<'a, const D: usize, P: Point<D>> KdTree<'a, D, P> {
             if let Some(child) = self.tree[tree_index].children[first] {
                 to_check.push((depth + 1, child));
             }
-
             if needs_to_go_both {
                 if let Some(child) = self.tree[tree_index].children[last] {
                     to_check.push((depth + 1, child));
@@ -137,32 +136,33 @@ impl<'a, const D: usize, P: Point<D>> KdTree<'a, D, P> {
     }
 }
 
-macro_rules! impl_point_array {
-    ($t: ty, $n: literal) => {
-        impl Point<$n> for [$t; $n] {
-            #[inline(always)]
-            fn get_axis(&self, n: usize) -> f32 {
-                self[n] as _
-            }
-        }
-    };
-}
-
-impl_point_array!(f32, 1);
-impl_point_array!(f32, 2);
-impl_point_array!(f32, 3);
-impl_point_array!(f32, 4);
-impl_point_array!(f64, 1);
-impl_point_array!(f64, 2);
-impl_point_array!(f64, 3);
-impl_point_array!(f64, 4);
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_arr() {
+    fn test_arr_5() {
+        #[rustfmt::skip]
+        let points: [[f32; 2]; 5] = [
+            [1.0, 0.0],
+            [2.0, 2.0],
+            [3.0, -1.0],
+            [-1.0, 0.0],
+            [0.0, 1.0],
+        ];
+        let tree = KdTree::from_items(&points);
+
+        dbg!(&tree.tree);
+
+        let nearest = tree.nearest_within([0.0, 0.0], 1.0);
+        for point_index in &nearest {
+            let point = tree.points[*point_index];
+            dbg!(point);
+        }
+    }
+
+    #[test]
+    fn test_arr_12() {
         let points: [[f32; 3]; 12] = [
             [9.0, 0.0, 0.0],
             [10.0, 0.0, 0.0],
@@ -186,6 +186,26 @@ mod tests {
         }
     }
 }
+
+macro_rules! impl_point_array {
+    ($t: ty, $n: literal) => {
+        impl Point<$n> for [$t; $n] {
+            #[inline(always)]
+            fn get_axis(&self, n: usize) -> f32 {
+                self[n] as _
+            }
+        }
+    };
+}
+
+impl_point_array!(f32, 1);
+impl_point_array!(f32, 2);
+impl_point_array!(f32, 3);
+impl_point_array!(f32, 4);
+impl_point_array!(f64, 1);
+impl_point_array!(f64, 2);
+impl_point_array!(f64, 3);
+impl_point_array!(f64, 4);
 
 #[cfg(feature = "glam")]
 macro_rules! impl_point_glam {
