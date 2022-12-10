@@ -132,6 +132,8 @@ impl_point_glam!(glam::Vec4, 4);
 #[cfg(feature = "glam")]
 mod glam_tests {
     use super::*;
+    use crate::KdTree;
+
     use glam::vec3a;
 
     #[test]
@@ -147,9 +149,9 @@ mod glam_tests {
             vec3a(0.0, 0.0, 0.0),
             vec3a(6.0, 0.0, 0.0),
         ];
-        let tree = KdTree::from_items(&points);
+        let tree = KdTree::from_points(&points);
 
-        for point_index in tree.nearest_within(vec3a(0.0, 0.0, 0.0), 2.0) {
+        for point_index in tree.point_indices_within(vec3a(0.0, 0.0, 0.0), 2.0) {
             let point = tree.points[point_index];
             dbg!(point);
         }

@@ -14,6 +14,7 @@ pub enum KdTreeStrategy {
     UnstableSort,
     StableSort,
     ShellSort,
+    HeapSort,
 }
 
 impl Default for KdTreeStrategy {
@@ -23,26 +24,83 @@ impl Default for KdTreeStrategy {
 }
 
 #[derive(Debug, Clone)]
-/// A KdTree of points with dimension D
+/// A Kd-tree of points with dimension D that uses lifetime semantics to
+/// signify that it only works when the provided points have not been modified.
+/// Use `KdTreeNoBorrow` to use it without that constraint at your own risk.
 pub struct KdTree<'a, const D: usize, P: Point<D>> {
-    pub strategy: KdTreeStrategy,
+    pub internal: KdTreeNoBorrow<D, P>,
     pub points: &'a [P],
-    pub tree: Vec<KdTreeNode>,
 }
 
 impl<'a, const D: usize, P: Point<D>> KdTree<'a, D, P> {
-    /// KdTree currently only supports bulk-creation since this is the most efficient
-    /// way to create a KdTree. It is also in my experience the most realistic
-    /// scenario for when you want to use a Kd-Tree.
-    ///
-    /// See `from_items_with_strategy` to choose your own construction/querying strategy for this
-    /// tree. Depending on the layour of your points some strategies might work better than otehrs.
-    pub fn from_items(points: &'a [P]) -> Self {
-        Self::from_items_with_strategy(points, KdTreeStrategy::default())
+    #[inline(always)]
+    pub fn from_points(points: &'a [P]) -> Self {
+        Self {
+            internal: KdTreeNoBorrow::from_points(points),
+            points,
+        }
     }
 
     /// Same as `from_items` but you can pick your own construction/querying strategy
-    pub fn from_items_with_strategy(points: &'a [P], strategy: KdTreeStrategy) -> Self {
+    #[inline(always)]
+    pub fn from_points_with_strategy(points: &'a [P], strategy: KdTreeStrategy) -> Self {
+        Self {
+            internal: KdTreeNoBorrow::from_points_with_strategy(points, strategy),
+            points,
+        }
+    }
+
+    /// Same as `point_indices_within`, but you provide your own buffers. Providing your own buffers
+    /// will be more efficient on multiple consecutive queries since you can reuse the allocations made
+    /// during the previous queries.
+    ///
+    /// Indices of points will be inserted into `result` which is not cleared by this function.
+    /// `to_check` is assumed to be empty from the start and will be cleared each time after calling this function.
+    #[inline(always)]
+    pub fn point_indices_within_buffers(
+        &self,
+        query_point: P,
+        radius: f32,
+        result: &mut Vec<usize>,
+        to_check: &mut Vec<(usize, usize)>,
+    ) {
+        self.internal.point_indices_within_buffers(
+            self.points,
+            query_point,
+            radius,
+            result,
+            to_check,
+        )
+    }
+
+    /// Returns a Vec of indices of the points that are within a hyperssphere of
+    /// the specified radius. Note that the distance is determined using Point::distance_squared
+    /// which is a euclidian distance by default.
+    ///
+    /// If you want to allocate your own buffer for multiple consecutive queries, see `point_indices_within_buffers`
+    #[inline(always)]
+    pub fn point_indices_within(&self, query_point: P, radius: f32) -> Vec<usize> {
+        self.internal
+            .point_indices_within(self.points, query_point, radius)
+    }
+}
+
+#[derive(Debug, Clone)]
+/// A KdTree of points with dimension D that doesn't use lifetime semantics
+pub struct KdTreeNoBorrow<const D: usize, P: Point<D>> {
+    pub strategy: KdTreeStrategy,
+    pub tree: Vec<KdTreeNode>,
+    pub __marker: std::marker::PhantomData<P>,
+}
+
+impl<const D: usize, P: Point<D>> KdTreeNoBorrow<D, P> {
+    /// See `KdTree`
+    pub fn from_points(points: &[P]) -> Self {
+        Self::from_points_with_strategy(points, KdTreeStrategy::default())
+    }
+
+    /// See `KdTree`
+    pub fn from_points_with_strategy(points: &[P], strategy: KdTreeStrategy) -> Self {
         let mut tree = Vec::with_capacity(points.len());
         let mut point_ids = (0..points.len()).into_iter().collect::<Vec<_>>();
 
@@ -73,8 +131,8 @@ impl<'a, const D: usize, P: Point<D>> KdTree<'a, D, P> {
                   Tested and implemented:
                     - [X] Merge-sort
                     - [X] Shell-sort
-                    - [ ] Quick-sort
-                    - [ ] Heaps-ort
+                    - [X] Quick-sort
+                    - [ ] Heap-sort
                     - [ ] Median of medians
         */
         while let Some(job) = jobs.pop() {
@@ -112,6 +170,12 @@ impl<'a, const D: usize, P: Point<D>> KdTree<'a, D, P> {
 
                 KdTreeStrategy::ShellSort => {
                     crate::utils::shell_sort(points, &mut point_ids[start..end], axis);
+
+                    (start + end) / 2
+                }
+
+                KdTreeStrategy::HeapSort => {
+                    crate::utils::heap_sort(points, &mut point_ids[start..end], axis);
 
                     (start + end) / 2
                 }
@@ -157,19 +221,15 @@ impl<'a, const D: usize, P: Point<D>> KdTree<'a, D, P> {
 
         Self {
             strategy,
-            points,
             tree,
+            __marker: std::marker::PhantomData,
         }
     }
 
-    /// Same as `point_indices_within`, but you provide your own buffers. Providing your own buffers
-    /// will be more efficient on multiple consecutive queries since you can reuse the allocations made
-    /// during the previous queries.
-    ///
-    /// Indices of points will be inserted into `result` which is not cleared by this function.
-    /// `to_check` is assumed to be empty from the start and will be cleared each time after calling this function.
+    /// See `KdTree`
     pub fn point_indices_within_buffers(
         &self,
+        points: &[P],
         query_point: P,
         radius: f32,
         result: &mut Vec<usize>,
@@ -188,13 +248,13 @@ impl<'a, const D: usize, P: Point<D>> KdTree<'a, D, P> {
 
             let axis = depth % D;
             let axis_query_point_val = querty_point_axis_values[axis];
-            let axis_tree_point_val = self.points[point_index].get_axis(axis);
+            let axis_tree_point_val = points[point_index].get_axis(axis);
             let axis_d = axis_tree_point_val - axis_query_point_val;
 
             let left_first = axis_d >= 0.0;
             let needs_to_go_both = axis_d.abs() <= radius;
 
-            if query_point.distance_squared(self.points[point_index]) <= radius_squared {
+            if query_point.distance_squared(points[point_index]) <= radius_squared {
                 result.push(point_index);
             }
 
@@ -212,16 +272,12 @@ impl<'a, const D: usize, P: Point<D>> KdTree<'a, D, P> {
         }
     }
 
-    /// Returns a Vec of indices of the points that are within a hyperssphere of
-    /// the specified radius. Note that the distance is determined using Point::distance_squared
-    /// which is a euclidian distance by default.
-    ///
-    /// If you want to allocate your own buffer for multiple consecutive queries, see `point_indices_within_buffers`
-    pub fn point_indices_within(&self, query_point: P, radius: f32) -> Vec<usize> {
+    /// See `KdTree`
+    pub fn point_indices_within(&self, points: &[P], query_point: P, radius: f32) -> Vec<usize> {
         let mut result = vec![];
         let mut to_check = vec![];
 
-        self.point_indices_within_buffers(query_point, radius, &mut result, &mut to_check);
+        self.point_indices_within_buffers(points, query_point, radius, &mut result, &mut to_check);
 
         result
     }
@@ -241,13 +297,13 @@ mod tests {
             [-1.0, 0.0],
             [0.0, 1.0],
         ];
-        let tree = KdTree::from_items(&points);
+        let tree = KdTreeNoBorrow::from_points(&points);
 
         dbg!(&tree.tree);
 
-        let nearest = tree.point_indices_within([0.0, 0.0], 1.0);
+        let nearest = tree.point_indices_within(&points, [0.0, 0.0], 1.0);
         for point_index in &nearest {
-            let point = tree.points[*point_index];
+            let point = points[*point_index];
             dbg!(point);
         }
     }
@@ -265,9 +321,7 @@ mod tests {
             [3.0, 3.0],
             [2.0, -2.0],
         ];
-        let tree = KdTree::from_items(&points);
-
-        dbg!(&tree.tree);
+        let tree = KdTree::from_points(&points);
 
         let nearest = tree.point_indices_within([0.0, 0.0], 3.0);
         for point_index in &nearest {
@@ -289,9 +343,7 @@ mod tests {
             [3.0, 3.0],
             [2.0, -2.0],
         ];
-        let tree = KdTree::from_items_with_strategy(&points, KdTreeStrategy::ShellSort);
-
-        dbg!(&tree.tree);
+        let tree = KdTree::from_points_with_strategy(&points, KdTreeStrategy::ShellSort);
 
         let nearest = tree.point_indices_within([0.0, 0.0], 3.0);
         for point_index in &nearest {
@@ -301,7 +353,7 @@ mod tests {
     }
 
     #[test]
-    fn test_arr_12() {
+    fn test_arr_12_non_owning() {
         let points: [[f32; 3]; 12] = [
             [9.0, 0.0, 0.0],
             [10.0, 0.0, 0.0],
@@ -316,11 +368,11 @@ mod tests {
             [0.0, 0.0, 0.0],
             [8.0, 0.0, 0.0],
         ];
-        let tree = KdTree::from_items(&points);
-        let nearest = tree.point_indices_within([0.0, 0.0, 0.0], 2.2);
+        let tree = KdTreeNoBorrow::from_points(&points);
+        let nearest = tree.point_indices_within(&points, [0.0, 0.0, 0.0], 2.2);
 
         for point_index in &nearest {
-            let point = tree.points[*point_index];
+            let point = points[*point_index];
             dbg!(point);
         }
     }
