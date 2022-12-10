@@ -1,7 +1,7 @@
 [package]
 name = "keyde"
 description = "Fast, Dependency-free Spacial Queries"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 authors = [ "Erik W. Gren <ErikWDev@gmail.com>" ]
 license = "MIT"
