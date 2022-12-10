@@ -74,28 +74,3 @@ where
     indices.swap(end_index, store_index);
     store_index
 }
-
-pub fn shell_sort<P, const D: usize>(points: &[P], indices: &mut [usize], axis: usize)
-where
-    P: Point<D>,
-{
-    let len = indices.len();
-    let mut gap = len as i32 / 2;
-
-    while gap > 0 {
-        for i in gap..len as i32 {
-            let temp_i = indices[i as usize];
-            let temp = points[temp_i].get_axis(axis);
-            let mut j = i;
-
-            while j >= gap && points[indices[j as usize - gap as usize]].get_axis(axis) > temp {
-                indices.swap(j as usize, j as usize - gap as usize);
-                j -= gap;
-            }
-
-            indices[j as usize] = temp_i;
-        }
-
-        gap /= 2;
-    }
-}
