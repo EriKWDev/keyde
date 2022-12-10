@@ -1,5 +1,7 @@
+//!
+
 pub trait Point<const D: usize>: Copy + std::fmt::Debug {
-    fn get_axis(&self, n: usize) -> f32;
+    fn get_axis(&self, d: usize) -> f32;
 
     #[inline(always)]
     fn distance_squared(self, b: Self) -> f32 {

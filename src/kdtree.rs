@@ -1,3 +1,4 @@
+//! The implementation of a spacial query structure knonw as a `Kd-tree`
 use crate::Point;
 
 #[derive(Debug, Clone)]
