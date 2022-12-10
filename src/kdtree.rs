@@ -132,7 +132,7 @@ impl<const D: usize, P: Point<D>> KdTreeNoBorrow<D, P> {
                     - [X] Merge-sort
                     - [X] Shell-sort
                     - [X] Quick-sort
-                    - [ ] Heap-sort
+                    - [X] Heap-sort
                     - [ ] Median of medians
         */
         while let Some(job) = jobs.pop() {
