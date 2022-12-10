@@ -1,5 +1,6 @@
 
 # Keyde - Small and Speedy spacial queries
+![cargo test](https://github.com/ErikWDev/keyde/actions/workflows/rust.yaml/badge.svg)
 Keyde aims to provide minimal yet fast implementations of spacial query structures.
 
 Currently, keyde provides a:
