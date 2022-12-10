@@ -1,12 +1,12 @@
 [package]
 name = "keyde"
-description = "A fast, dependency-free Kd-tree"
-version = "0.2.1"
+description = "Fast, Dependency-free Spacial Queries"
+version = "0.2.2"
 edition = "2021"
 authors = [ "Erik W. Gren <ErikWDev@gmail.com>" ]
 license = "MIT"
 repository = "https://github.com/ErikWDev/keyde"
-keywords = ["kd-tree", "query", "spatial", "clustering"]
+keywords = ["kd-tree", "query", "spacial", "clustering", "nearest-neighbor"]
 categories = ["game-development", "algorithms"]
 
 [dependencies]
