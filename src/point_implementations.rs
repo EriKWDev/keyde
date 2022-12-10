@@ -2,7 +2,19 @@
 //! Also check the features tab to see if we provide specific implementations for your favorite linear algebra crate.
 //! Currently, we have special implementations for:
 //!     - `glam`
-use crate::Point;
+pub trait Point<const D: usize>: Copy + std::fmt::Debug {
+    fn get_axis(&self, d: usize) -> f32;
+
+    #[inline(always)]
+    fn distance_squared(self, b: Self) -> f32 {
+        (0..D)
+            .map(|d| {
+                let delta = self.get_axis(d) - b.get_axis(d);
+                delta * delta
+            })
+            .sum::<f32>() as f32
+    }
+}
 
 macro_rules! impl_point_value {
     ($t: ty) => {
@@ -39,7 +51,6 @@ macro_rules! impl_point_array {
         }
     };
 }
-
 impl_point_array!(f32, 1);
 impl_point_array!(f32, 2);
 impl_point_array!(f32, 3);
@@ -57,7 +68,6 @@ macro_rules! impl_point_tuple_2 {
                 match d {
                     0 => self.0 as _,
                     1 => self.1 as _,
-
                     _ => unreachable!(),
                 }
             }
@@ -66,6 +76,7 @@ macro_rules! impl_point_tuple_2 {
 }
 impl_point_tuple_2!(f32);
 impl_point_tuple_2!(f64);
+
 macro_rules! impl_point_tuple_3 {
     ($t: ty) => {
         impl Point<3> for ($t, $t, $t) {
@@ -75,7 +86,6 @@ macro_rules! impl_point_tuple_3 {
                     0 => self.0 as _,
                     1 => self.1 as _,
                     2 => self.2 as _,
-
                     _ => unreachable!(),
                 }
             }
@@ -84,6 +94,7 @@ macro_rules! impl_point_tuple_3 {
 }
 impl_point_tuple_3!(f32);
 impl_point_tuple_3!(f64);
+
 macro_rules! impl_point_tuple_4 {
     ($t: ty) => {
         impl Point<4> for ($t, $t, $t, $t) {
@@ -94,7 +105,6 @@ macro_rules! impl_point_tuple_4 {
                     1 => self.1 as _,
                     2 => self.2 as _,
                     3 => self.3 as _,
-
                     _ => unreachable!(),
                 }
             }
@@ -110,9 +120,9 @@ pub use glam_implementations::*;
 pub mod glam_implementations {
     use super::*;
 
-    macro_rules! impl_point_glam {
-        ($t: ty, $n: literal) => {
-            impl Point<$n> for $t {
+    macro_rules! impl_point_glam_2 {
+        ($t: ty) => {
+            impl Point<2> for $t {
                 #[inline(always)]
                 fn distance_squared(self, b: Self) -> f32 {
                     self.distance_squared(b)
@@ -120,16 +130,62 @@ pub mod glam_implementations {
 
                 #[inline(always)]
                 fn get_axis(&self, d: usize) -> f32 {
-                    self[d]
+                    match d {
+                        0 => self.x,
+                        1 => self.y,
+                        _ => unreachable!(),
+                    }
                 }
             }
         };
     }
+    impl_point_glam_2!(glam::Vec2);
 
-    impl_point_glam!(glam::Vec2, 2);
-    impl_point_glam!(glam::Vec3A, 3);
-    impl_point_glam!(glam::Vec3, 3);
-    impl_point_glam!(glam::Vec4, 4);
+    macro_rules! impl_point_glam_3 {
+        ($t: ty) => {
+            impl Point<3> for $t {
+                #[inline(always)]
+                fn distance_squared(self, b: Self) -> f32 {
+                    self.distance_squared(b)
+                }
+
+                #[inline(always)]
+                fn get_axis(&self, d: usize) -> f32 {
+                    match d {
+                        0 => self.x,
+                        1 => self.y,
+                        2 => self.z,
+                        _ => unreachable!(),
+                    }
+                }
+            }
+        };
+    }
+    impl_point_glam_3!(glam::Vec3A);
+    impl_point_glam_3!(glam::Vec3);
+
+    macro_rules! impl_point_glam_4 {
+        ($t: ty) => {
+            impl Point<4> for $t {
+                #[inline(always)]
+                fn distance_squared(self, b: Self) -> f32 {
+                    self.distance_squared(b)
+                }
+
+                #[inline(always)]
+                fn get_axis(&self, d: usize) -> f32 {
+                    match d {
+                        0 => self.x,
+                        1 => self.y,
+                        2 => self.z,
+                        3 => self.w,
+                        _ => unreachable!(),
+                    }
+                }
+            }
+        };
+    }
+    impl_point_glam_4!(glam::Vec4);
 
     #[cfg(test)]
     mod glam_tests {

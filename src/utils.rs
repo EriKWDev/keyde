@@ -1,27 +1,40 @@
 /// Mostly internal utils like sorting functions and other algorithms
-use crate::{Point, SortingStrategy};
+use crate::Point;
 
 pub use heap_sort::*;
+pub use quicksort::*;
 pub use shell_sort::*;
 
-/*
-    TODO: Decouple sorting from Points trait.
-          Could be done using generics:
-
-          fn name<F>( .. )
-          where
-              F: FnMut(items: &[T], usize, usize) -> std::cmp::Ordering
-*/
-
-#[inline(always)]
-pub fn point_axis_compare<const D: usize, P>(a: &P, b: &P, axis: usize) -> std::cmp::Ordering
-where
-    P: Point<D>,
-{
-    a.get_axis(axis)
-        .partial_cmp(&b.get_axis(axis))
-        .unwrap_or_else(|| std::cmp::Ordering::Equal)
+#[derive(Debug, Clone)]
+/// Depending on the nature of your data, some strategies might work better than others
+pub enum SortingStrategy {
+    StableSort,
+    UnstableSort,
+    ShellSort,
+    HeapSort,
+    QuickSort,
 }
+
+impl Default for SortingStrategy {
+    fn default() -> Self {
+        Self::QuickSort
+    }
+}
+
+/*
+    TODO: Decouple sorting from Point trait.
+
+          Preferably, all sorting algorithms should be decoupled from the points trait.
+          This could be done efficiently by changing all `XX_sort` to instead be
+          `XX_sort_by` using generics over a comparison function:
+
+              pub fn XX_sort_by<F>(items: &[T], indices: &mut [usize], cmp: F)
+              where
+                  F: FnMut(items: &[T], usize, usize, usize) -> std::cmp::Ordering
+              { .. }
+
+          All sorting methods using `Points` could then utilize `point_axis_compare`
+*/
 
 #[inline]
 pub fn sort_using_strategy<P, const D: usize>(
@@ -32,42 +45,126 @@ pub fn sort_using_strategy<P, const D: usize>(
 ) where
     P: Point<D>,
 {
-    /*
-        TODO: Investigate if other sorting methods are faster.
-              Tested and implemented:
-                - [X] Merge-sort
-                - [X] Quick-sort
-                - [X] Shell-sort
-                - [X] Heap-sort
-    */
-
     match strategy {
-        SortingStrategy::StableSort => {
-            indices.sort_by(|a, b| {
-                points[*a]
-                    .get_axis(axis)
-                    .partial_cmp(&points[*b].get_axis(axis))
-                    .unwrap_or_else(|| std::cmp::Ordering::Equal)
-            });
-        }
-
-        SortingStrategy::UnstableSort => {
-            indices.sort_unstable_by(|a, b| {
-                points[*a]
-                    .get_axis(axis)
-                    .partial_cmp(&points[*b].get_axis(axis))
-                    .unwrap_or_else(|| std::cmp::Ordering::Equal)
-            });
-        }
-
-        SortingStrategy::ShellSort => {
-            crate::utils::shell_sort(points, indices, axis);
-        }
-
-        SortingStrategy::HeapSort => {
-            crate::utils::heap_sort(points, indices, axis);
-        }
+        SortingStrategy::StableSort => stable_sort(points, indices, axis),
+        SortingStrategy::UnstableSort => unstable_sort(points, indices, axis),
+        SortingStrategy::ShellSort => shell_sort(points, indices, axis),
+        SortingStrategy::HeapSort => heap_sort(points, indices, axis),
+        SortingStrategy::QuickSort => quick_sort(points, indices, axis),
     };
+}
+
+#[inline(always)]
+pub fn stable_sort<P, const D: usize>(points: &[P], indices: &mut [usize], axis: usize)
+where
+    P: Point<D>,
+{
+    indices.sort_by(|a, b| point_axis_compare(points, *a, *b, axis));
+}
+
+#[inline(always)]
+pub fn unstable_sort<P, const D: usize>(points: &[P], indices: &mut [usize], axis: usize)
+where
+    P: Point<D>,
+{
+    indices.sort_unstable_by(|a, b| point_axis_compare(points, *a, *b, axis));
+}
+
+#[inline(always)]
+pub fn point_axis_compare<const D: usize, P>(
+    points: &[P],
+    a: usize,
+    b: usize,
+    axis: usize,
+) -> std::cmp::Ordering
+where
+    P: Point<D>,
+{
+    points[a]
+        .get_axis(axis)
+        .partial_cmp(&points[b].get_axis(axis))
+        .unwrap_or_else(|| std::cmp::Ordering::Equal)
+}
+
+pub mod quicksort {
+    use super::*;
+
+    pub fn quick_sort<const D: usize, P>(points: &[P], indices: &mut [usize], axis: usize)
+    where
+        P: Point<D>,
+    {
+        let mut stack = Vec::new();
+        stack.push((0, indices.len()));
+
+        while let Some((start, end)) = stack.pop() {
+            if start >= end {
+                continue;
+            }
+
+            let pivot = partition(points, indices, start, end, axis);
+
+            stack.push((start, pivot));
+            stack.push((pivot + 1, end));
+        }
+    }
+
+    pub fn partition<const D: usize, P>(
+        points: &[P],
+        indices: &mut [usize],
+        start: usize,
+        end: usize,
+        axis: usize,
+    ) -> usize
+    where
+        P: Point<D>,
+    {
+        let mut i = start;
+        let pivot = end - 1;
+        let pivot_val = points[indices[pivot]].get_axis(axis);
+
+        for j in start..pivot {
+            if points[indices[j]].get_axis(axis) < pivot_val {
+                indices.swap(i, j);
+                i += 1;
+            }
+        }
+
+        indices.swap(i, pivot);
+        i
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn test_quick_sort() {
+            #[rustfmt::skip]
+            let points = [1_i32, 7, 56, 34, 576, 2, 4, 5, 6, 7, 9, 10, 9, 1, 2, 3, 100, 23452345, 34, 3, 4545];
+            let mut indices = (0..points.len()).into_iter().collect::<Vec<_>>();
+            let mut indices_2 = (0..points.len()).into_iter().collect::<Vec<_>>();
+
+            quick_sort(&points, &mut indices, 0);
+            indices_2.sort_unstable_by(|a, b| {
+                points[*a]
+                    .get_axis(0)
+                    .partial_cmp(&points[*b].get_axis(0))
+                    .unwrap_or_else(|| std::cmp::Ordering::Equal)
+            });
+            for i in 0..points.len() {
+                print!("{}, ", points[indices[i]]);
+            }
+            println!("");
+            for i in 0..points.len() {
+                print!("{}, ", points[indices_2[i]]);
+            }
+            println!("");
+
+            for i in 0..points.len() {
+                assert!(points[indices[i]] == points[indices_2[i]]);
+            }
+        }
+    }
 }
 
 pub mod shell_sort {
@@ -159,23 +256,31 @@ pub mod heap_sort {
         P: Point<D>,
     {
         let last = arr.len() - 1;
+        let root_value = points[arr[root]].get_axis(axis);
+
         loop {
             let left = 2 * root + 1;
 
             if left > last {
                 break;
             }
-            let right = left + 1;
 
-            let max = if right <= last
-                && points[arr[right]].get_axis(axis) > points[arr[left]].get_axis(axis)
-            {
-                right
+            let right = left + 1;
+            let left_value = points[arr[left]].get_axis(axis);
+
+            let (max, max_value) = if right <= last {
+                let right_value = points[arr[right]].get_axis(axis);
+
+                if right_value > left_value {
+                    (right, right_value)
+                } else {
+                    (left, left_value)
+                }
             } else {
-                left
+                (left, left_value)
             };
 
-            if points[arr[max]].get_axis(axis) > points[arr[root]].get_axis(axis) {
+            if max_value > root_value {
                 arr.swap(root, max);
             }
 
