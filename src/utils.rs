@@ -1,7 +1,74 @@
 /// Mostly internal utils like sorting functions and other algorithms
-use crate::Point;
+use crate::{Point, SortingStrategy};
+
 pub use heap_sort::*;
 pub use shell_sort::*;
+
+/*
+    TODO: Decouple sorting from Points trait.
+          Could be done using generics:
+
+          fn name<F>( .. )
+          where
+              F: FnMut(items: &[T], usize, usize) -> std::cmp::Ordering
+*/
+
+#[inline(always)]
+pub fn point_axis_compare<const D: usize, P>(a: &P, b: &P, axis: usize) -> std::cmp::Ordering
+where
+    P: Point<D>,
+{
+    a.get_axis(axis)
+        .partial_cmp(&b.get_axis(axis))
+        .unwrap_or_else(|| std::cmp::Ordering::Equal)
+}
+
+#[inline]
+pub fn sort_using_strategy<P, const D: usize>(
+    points: &[P],
+    indices: &mut [usize],
+    axis: usize,
+    strategy: &SortingStrategy,
+) where
+    P: Point<D>,
+{
+    /*
+        TODO: Investigate if other sorting methods are faster.
+              Tested and implemented:
+                - [X] Merge-sort
+                - [X] Quick-sort
+                - [X] Shell-sort
+                - [X] Heap-sort
+    */
+
+    match strategy {
+        SortingStrategy::StableSort => {
+            indices.sort_by(|a, b| {
+                points[*a]
+                    .get_axis(axis)
+                    .partial_cmp(&points[*b].get_axis(axis))
+                    .unwrap_or_else(|| std::cmp::Ordering::Equal)
+            });
+        }
+
+        SortingStrategy::UnstableSort => {
+            indices.sort_unstable_by(|a, b| {
+                points[*a]
+                    .get_axis(axis)
+                    .partial_cmp(&points[*b].get_axis(axis))
+                    .unwrap_or_else(|| std::cmp::Ordering::Equal)
+            });
+        }
+
+        SortingStrategy::ShellSort => {
+            crate::utils::shell_sort(points, indices, axis);
+        }
+
+        SortingStrategy::HeapSort => {
+            crate::utils::heap_sort(points, indices, axis);
+        }
+    };
+}
 
 pub mod shell_sort {
     use super::*;
@@ -76,6 +143,7 @@ pub mod heap_sort {
         });
     }
 
+    #[inline]
     fn heapify<P, const D: usize>(points: &[P], indices: &mut [usize], axis: usize)
     where
         P: Point<D>,
@@ -110,6 +178,7 @@ pub mod heap_sort {
             if points[arr[max]].get_axis(axis) > points[arr[root]].get_axis(axis) {
                 arr.swap(root, max);
             }
+
             root = max;
         }
     }

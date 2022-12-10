@@ -1,4 +1,17 @@
-//!
+#[derive(Debug, Clone)]
+/// Depending on the nature of your data, some strategies might work better than others
+pub enum SortingStrategy {
+    UnstableSort,
+    StableSort,
+    ShellSort,
+    HeapSort,
+}
+
+impl Default for SortingStrategy {
+    fn default() -> Self {
+        Self::UnstableSort
+    }
+}
 
 pub trait Point<const D: usize>: Copy + std::fmt::Debug {
     fn get_axis(&self, d: usize) -> f32;

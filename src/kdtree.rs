@@ -1,5 +1,5 @@
 //! The implementation of a spacial query structure knonw as a `Kd-tree`
-use crate::Point;
+use crate::{Point, SortingStrategy};
 
 #[derive(Debug, Clone)]
 /// Internal node within the KdTree
@@ -7,21 +7,6 @@ pub struct KdTreeNode {
     pub parent: usize,
     pub index: usize,
     pub children: [Option<usize>; 2],
-}
-
-#[derive(Debug, Clone)]
-/// Depending on the nature of your data, some strategies might work better than others
-pub enum KdTreeStrategy {
-    UnstableSort,
-    StableSort,
-    ShellSort,
-    HeapSort,
-}
-
-impl Default for KdTreeStrategy {
-    fn default() -> Self {
-        Self::UnstableSort
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -44,7 +29,7 @@ impl<'a, const D: usize, P: Point<D>> KdTree<'a, D, P> {
 
     /// Same as `from_items` but you can pick your own construction/querying strategy
     #[inline(always)]
-    pub fn from_points_with_strategy(points: &'a [P], strategy: KdTreeStrategy) -> Self {
+    pub fn from_points_with_strategy(points: &'a [P], strategy: SortingStrategy) -> Self {
         Self {
             internal: KdTreeNoBorrow::from_points_with_strategy(points, strategy),
             points,
@@ -75,7 +60,7 @@ impl<'a, const D: usize, P: Point<D>> KdTree<'a, D, P> {
     }
 
     /// Returns a Vec of indices of the points that are within a hyperssphere of
-    /// the specified radius. Note that the distance is determined using Point::distance_squared
+    /// the specified radius. Note that the distance is determined using `Point::distance_squared`
     /// which is a euclidian distance by default.
     ///
     /// If you want to allocate your own buffer for multiple consecutive queries, see `point_indices_within_buffers`
@@ -89,7 +74,7 @@ impl<'a, const D: usize, P: Point<D>> KdTree<'a, D, P> {
 #[derive(Debug, Clone)]
 /// A KdTree of points with dimension D that doesn't use lifetime semantics
 pub struct KdTreeNoBorrow<const D: usize, P: Point<D>> {
-    pub strategy: KdTreeStrategy,
+    pub strategy: SortingStrategy,
     pub tree: Vec<KdTreeNode>,
     pub __marker: std::marker::PhantomData<P>,
 }
@@ -97,11 +82,11 @@ pub struct KdTreeNoBorrow<const D: usize, P: Point<D>> {
 impl<const D: usize, P: Point<D>> KdTreeNoBorrow<D, P> {
     /// See `KdTree`
     pub fn from_points(points: &[P]) -> Self {
-        Self::from_points_with_strategy(points, KdTreeStrategy::default())
+        Self::from_points_with_strategy(points, SortingStrategy::default())
     }
 
     /// See `KdTree`
-    pub fn from_points_with_strategy(points: &[P], strategy: KdTreeStrategy) -> Self {
+    pub fn from_points_with_strategy(points: &[P], strategy: SortingStrategy) -> Self {
         let mut tree = Vec::with_capacity(points.len());
         let mut point_ids = (0..points.len()).into_iter().collect::<Vec<_>>();
 
@@ -127,14 +112,6 @@ impl<const D: usize, P: Point<D>> KdTreeNoBorrow<D, P> {
 
         /*
             TODO: Pre-sort on all axes before-hand instead of sorting at each level
-
-            TODO: Investigate if other sorting/pivot-picking methods are faster.
-                  Tested and implemented:
-                    - [X] Merge-sort
-                    - [X] Shell-sort
-                    - [X] Quick-sort
-                    - [X] Heap-sort
-                    - [ ] Median of medians
         */
         while let Some(job) = jobs.pop() {
             let Job {
@@ -146,41 +123,9 @@ impl<const D: usize, P: Point<D>> KdTreeNoBorrow<D, P> {
             } = job;
 
             let axis = depth % D;
-            let pivot_index = match strategy {
-                KdTreeStrategy::StableSort => {
-                    point_ids[start..end].sort_by(|a, b| {
-                        points[*a]
-                            .get_axis(axis)
-                            .partial_cmp(&points[*b].get_axis(axis))
-                            .unwrap_or_else(|| std::cmp::Ordering::Equal)
-                    });
+            let pivot_index = (start + end) / 2;
 
-                    (start + end) / 2
-                }
-
-                KdTreeStrategy::UnstableSort => {
-                    point_ids[start..end].sort_unstable_by(|a, b| {
-                        points[*a]
-                            .get_axis(axis)
-                            .partial_cmp(&points[*b].get_axis(axis))
-                            .unwrap_or_else(|| std::cmp::Ordering::Equal)
-                    });
-
-                    (start + end) / 2
-                }
-
-                KdTreeStrategy::ShellSort => {
-                    crate::utils::shell_sort(points, &mut point_ids[start..end], axis);
-
-                    (start + end) / 2
-                }
-
-                KdTreeStrategy::HeapSort => {
-                    crate::utils::heap_sort(points, &mut point_ids[start..end], axis);
-
-                    (start + end) / 2
-                }
-            };
+            crate::utils::sort_using_strategy(points, &mut point_ids[start..end], axis, &strategy);
 
             let tree_index = tree.len();
             tree.push(KdTreeNode {
@@ -344,7 +289,7 @@ mod tests {
             [3.0, 3.0],
             [2.0, -2.0],
         ];
-        let tree = KdTree::from_points_with_strategy(&points, KdTreeStrategy::ShellSort);
+        let tree = KdTree::from_points_with_strategy(&points, SortingStrategy::ShellSort);
 
         let nearest = tree.point_indices_within([0.0, 0.0], 3.0);
         for point_index in &nearest {
