@@ -12,5 +12,4 @@ I would like to make that into an iterator instead if possible..
 
 Key things that differ keyde from others and make it fast:
   - No recursion, only iterative implementations
-  - No sorting at each split, instead only sorting by each dimension once at start of construction
   - No cloning of your data, everything is refered to by indices into your data

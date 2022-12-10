@@ -29,71 +29,94 @@ pub struct KdTree<'a, const D: usize, P: Point<D>> {
 impl<'a, const D: usize, P: Point<D>> KdTree<'a, D, P> {
     pub fn from_items(points: &'a [P]) -> Self {
         let mut tree = Vec::with_capacity(points.len());
+        let mut point_ids = (0..points.len()).into_iter().collect::<Vec<_>>();
 
-        let mut axis_sorted_point_ids = vec![vec![]; D];
-        let mut axis_point_id_to_sorted_id = vec![vec![0; points.len()]; D];
+        #[derive(Debug)]
+        struct Job {
+            start: usize,
+            end: usize,
+            left_right: usize,
+            depth: usize,
+            parent: usize,
+        }
 
-        axis_sorted_point_ids[D - 1] = (0..points.len()).into_iter().collect::<Vec<_>>();
+        let root_job = Job {
+            start: 0,
+            end: points.len() - 1,
+            left_right: 0,
+            depth: 0,
+            parent: 0,
+        };
 
-        (0..D - 1).into_iter().for_each(|axis| {
-            if axis < D - 1 {
-                axis_sorted_point_ids[axis] = axis_sorted_point_ids[D - 1].clone();
-            }
+        let mut is_root = true;
+        let mut jobs = vec![root_job];
 
-            axis_sorted_point_ids[axis].sort_by(|a, b| {
+        while let Some(job) = jobs.pop() {
+            let Job {
+                start,
+                end,
+                left_right,
+                depth,
+                parent,
+            } = job;
+
+            let axis = depth % D;
+            point_ids[start..end].sort_by(|a, b| {
                 points[*a]
                     .get_axis(axis)
                     .partial_cmp(&points[*b].get_axis(axis))
                     .unwrap_or_else(|| std::cmp::Ordering::Equal)
             });
+            let median_index = (start + end) / 2;
 
-            axis_sorted_point_ids[axis]
-                .iter()
-                .enumerate()
-                .for_each(|(i, pi)| {
-                    axis_point_id_to_sorted_id[axis][*pi] = i;
-                });
-        });
-
-        let mut is_root = true;
-        let mut ranges_to_do = vec![(0..points.len(), 0, 0, 0)];
-
-        while let Some((range, left_right, depth, parent)) = ranges_to_do.pop() {
-            let start = range.start;
-            let end = range.end;
-
-            let axis = depth % D;
-            let sorted_ids = &axis_sorted_point_ids[axis];
-            let median = (end + start) / 2;
-
-            let index = tree.len();
+            let tree_index = tree.len();
             tree.push(KdTreeNode {
                 parent,
-                index: sorted_ids[median],
+                index: point_ids[median_index],
                 children: [None, None],
             });
 
-            let left = start..median;
-            if left.start != left.end {
-                ranges_to_do.push((left, 0, depth + 1, index));
+            let new_depth = depth + 1;
+            let (left_start, left_end) = (start, median_index);
+            if left_start != left_end {
+                jobs.push(Job {
+                    start: left_start,
+                    end: left_end,
+                    left_right: 0,
+                    depth: new_depth,
+                    parent: tree_index,
+                });
             }
 
-            let right = median + 1..end;
-            if right.start != right.end {
-                ranges_to_do.push((right, 1, depth + 1, index));
+            let (right_start, right_end) = (median_index + 1, end);
+            if right_start != right_end {
+                jobs.push(Job {
+                    start: right_start,
+                    end: right_end,
+                    left_right: 1,
+                    depth: new_depth,
+                    parent: tree_index,
+                });
             }
 
-            if !is_root {
-                tree[parent].children[left_right] = Some(index);
-            } else {
+            if is_root {
                 is_root = false;
+                continue;
             }
+
+            tree[parent].children[left_right] = Some(tree_index);
         }
 
         Self { points, tree }
     }
 
-    pub fn nearest_within(&self, query_point: P, radius: f32) -> Vec<usize> {
+    pub fn nearest_within_buffers(
+        &self,
+        query_point: P,
+        radius: f32,
+        result: &mut Vec<usize>,
+        to_check: &mut Vec<(usize, usize)>,
+    ) {
         let radius_squared = radius * radius;
 
         let mut querty_point_axis_values = [0.0; D];
@@ -101,9 +124,7 @@ impl<'a, const D: usize, P: Point<D>> KdTree<'a, D, P> {
             querty_point_axis_values[i] = query_point.get_axis(i);
         }
 
-        let mut result = vec![];
-        let mut to_check = vec![(0, 0)];
-
+        to_check.push((0, 0));
         while let Some((depth, tree_index)) = to_check.pop() {
             let point_index = self.tree[tree_index].index;
 
@@ -131,6 +152,13 @@ impl<'a, const D: usize, P: Point<D>> KdTree<'a, D, P> {
                 }
             }
         }
+    }
+
+    pub fn nearest_within(&self, query_point: P, radius: f32) -> Vec<usize> {
+        let mut result = vec![];
+        let mut to_check = vec![];
+
+        self.nearest_within_buffers(query_point, radius, &mut result, &mut to_check);
 
         result
     }
@@ -158,6 +186,30 @@ mod tests {
         for point_index in &nearest {
             let point = tree.points[*point_index];
             dbg!(point);
+        }
+    }
+
+    #[test]
+    fn test_arr_8() {
+        #[rustfmt::skip]
+        let points: [[f32; 2]; 8] = [
+            [1.0, 1.0],
+            [-3.0, 3.0],
+            [-2.0, 0.0],
+            [0.0, 1.0],
+            [-1.0, -2.0],
+            [-3.0, -3.0],
+            [3.0, 3.0],
+            [2.0, -2.0],
+        ];
+        let tree = KdTree::from_items(&points);
+
+        dbg!(&tree.tree);
+
+        let nearest = tree.nearest_within([0.0, 0.0], 3.0);
+        for point_index in &nearest {
+            let point = tree.points[*point_index];
+            dbg!(point_index, point);
         }
     }
 

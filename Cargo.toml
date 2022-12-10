@@ -1,7 +1,7 @@
 [package]
 name = "keyde"
 description = "A fast, dependency-free Kd-tree"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 authors = [ "Erik W. Gren <ErikWDev@gmail.com>" ]
 license = "MIT"
