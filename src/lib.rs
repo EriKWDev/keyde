@@ -67,17 +67,17 @@ impl<'a, const D: usize, P: Point<D>> KdTree<'a, D, P> {
                     .partial_cmp(&points[*b].get_axis(axis))
                     .unwrap_or_else(|| std::cmp::Ordering::Equal)
             });
-            let median_index = (start + end) / 2;
+            let pivot_index = (start + end) / 2;
 
             let tree_index = tree.len();
             tree.push(KdTreeNode {
                 parent,
-                index: point_ids[median_index],
+                index: point_ids[pivot_index],
                 children: [None, None],
             });
 
             let new_depth = depth + 1;
-            let (left_start, left_end) = (start, median_index);
+            let (left_start, left_end) = (start, pivot_index);
             if left_start != left_end {
                 jobs.push(Job {
                     start: left_start,
@@ -88,7 +88,7 @@ impl<'a, const D: usize, P: Point<D>> KdTree<'a, D, P> {
                 });
             }
 
-            let (right_start, right_end) = (median_index + 1, end);
+            let (right_start, right_end) = (pivot_index + 1, end);
             if right_start != right_end {
                 jobs.push(Job {
                     start: right_start,
